@@ -6,6 +6,10 @@ import { sendToken } from "../utils/jwtToken.js";
 
 export const register = catchAsyncErrors(async (req, res, next) => {
   try {
+    // Debug logs
+    console.log("Register Request Body:", req.body);
+    console.log("Register Files:", req.files);
+
     const {
       name,
       email,
@@ -19,18 +23,19 @@ export const register = catchAsyncErrors(async (req, res, next) => {
       coverLetter,  
     } = req.body;
 
+    // Validate required fields
     if (!name || !email || !phone || !address || !password || !role) {
-      return next(new ErrorHandler("All fileds are required.", 400));
+      console.log("Missing required fields:", { name, email, phone, address, password, role });
+      return next(new ErrorHandler("All fields are required.", 400));
     }
-    if (role === "Job Seeker" && (!firstNiche || !secondNiche || !thirdNiche)) {
-      return next(
-        new ErrorHandler("Please provide your preferred job niches.", 400)
-      );
-    }
+
+    // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return next(new ErrorHandler("Email is already registered.", 400));
     }
+
+    // Prepare user data
     const userData = {
       name,
       email,
@@ -38,38 +43,42 @@ export const register = catchAsyncErrors(async (req, res, next) => {
       address,
       password,
       role,
-      niches: {
+      niches: role === "Job Seeker" ? {
         firstNiche,
         secondNiche,
         thirdNiche,
-      },
+      } : undefined,
       coverLetter,
     };
+
+    // Handle resume upload if present
     if (req.files && req.files.resume) {
       const { resume } = req.files;
-      if (resume) {
-        try {
-          const cloudinaryResponse = await cloudinary.uploader.upload(
-            resume.tempFilePath,
-            { folder: "Job_Seekers_Resume" }
-          );
-          if (!cloudinaryResponse || cloudinaryResponse.error) {
-            return next(
-              new ErrorHandler("Failed to upload resume to cloud.", 500)
-            );
-          }
+      try {
+        const cloudinaryResponse = await cloudinary.uploader.upload(
+          resume.tempFilePath,
+          { folder: "Job_Seekers_Resume" }
+        );
+        if (cloudinaryResponse) {
           userData.resume = {
             public_id: cloudinaryResponse.public_id,
             url: cloudinaryResponse.secure_url,
           };
-        } catch (error) {
-          return next(new ErrorHandler("Failed to upload resume", 500));
         }
+      } catch (error) {
+        console.error("Resume upload error:", error);
+        return next(new ErrorHandler("Failed to upload resume", 500));
       }
     }
+
+    // Create user
+    console.log("Creating user with data:", userData);
     const user = await User.create(userData);
+    console.log("User created:", user);
+
     sendToken(user, 201, res, "User Registered.");
   } catch (error) {
+    console.error("Registration error:", error);
     next(error);
   }
 });
